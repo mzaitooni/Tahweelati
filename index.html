@@ -190,33 +190,28 @@ function renderSettlementEditor(l){if(!settleDraft||settleDraft.lineId!==l.id)re
 let v=settleDraft;let other=v.other&&v.other!==l.id?v.other:CURRENT;
 const options=`<option value="${CURRENT}" ${other===CURRENT?'selected':''}>الجاري / المتبقي من الراتب</option>`+current().lines.filter(x=>x.id!==l.id).map(x=>`<option value="${escape(x.id)}" ${other===x.id?'selected':''}>${escape(x.name)} — ${escape(groupName(x.stage))}</option>`).join('');
 return `<div class="settle-editor" data-editor="${escape(l.id)}"><div class="edithead">${v.editId?'تعديل تسوية':'تسوية جديدة'} ${v.sign<0?'− من':' + إلى'} ${escape(l.name)}</div><div class="inputs"><div class="amountfield"><label>المبلغ (ر.س)</label><input id="settleAmount" type="number" min="1" step="1" inputmode="decimal" value="${v.amount}" aria-label="مبلغ التسوية"></div></div><div class="stepper"><button data-act="settleStep" data-step="-100">−100</button><button data-act="settleStep" data-step="100">+100</button><span class="tiny">كل ضغطة 100 ريال</span></div><label style="margin-top:8px">الطرف المقابل</label><select id="settleCounter" aria-label="الحساب المقابل">${options}</select><div class="settle-helper">${v.sign<0?'يُخصم من هذا البند ويُضاف للطرف المقابل.':'يُضاف لهذا البند ويُخصم من الطرف المقابل.'} التسوية تُضاف لهذا الشهر مباشرة، ولا يرحّل منها إلا صافي المبلغ السالب غير المنفذ عند إنشاء الشهر التالي.</div><div class="footerbuttons"><button data-act="cancelSettlement">إلغاء</button><button class="primary" data-act="saveSettlement" data-id="${escape(l.id)}">${v.editId?'حفظ التعديل':'حفظ التسوية'}</button></div></div>`}
-// مقاصة اقتراحية بين حسابات البنك نفسه: تُحوَّل المبالغ السالبة مباشرة
-// إلى الحسابات المستفيدة متى أمكن، والباقي إلى حساب استقبال البنك.
-// لا نغيّر التسويات الأصلية ولا التيكات؛ هذه فقط تعليمات التنفيذ.
+// مقاصة بسيطة: لا نغير المسار المعتاد إلا إذا كانت هناك مطابقة تامة
+// بين حساب سالب وحساب مستفيد، فتوفر حوّالة كاملة بالفعل.
+// لا نقسم المبلغ السالب على عدة مستفيدين: هذا يكثر التعليمات من غير فائدة.
 function bankNetPlan(m,bank){
  const targetId=state.bankTargets?.[bank];
  const target=m.lines.find(x=>x.id===targetId&&route(x.stage)===bank);
  if(!target)return {target:null,transfers:[]};
  const negatives=m.lines.filter(l=>route(l.stage)===bank&&l.id!==target.id&&net(m,l)<-0.005)
-    .map(l=>({id:l.id,remaining:round(-net(m,l)),name:l.name}));
+    .map(l=>({id:l.id,amount:round(-net(m,l))}));
  const positives=m.lines.filter(l=>route(l.stage)===bank&&l.id!==target.id&&net(m,l)>0.005)
-    .map(l=>({id:l.id,remaining:round(net(m,l)),name:l.name}));
+    .map(l=>({id:l.id,amount:round(net(m,l)),used:false}));
  const transfers=[];
- const transfer=(s,d,a)=>{if(a>.005){transfers.push({from:s.id,to:d.id,amount:round(a)});s.remaining=round(s.remaining-a);d.remaining=round(d.remaining-a)}};
- // أولاً: التطابقات التامة تختصر عادةً عدد الحوالات.
  for(const source of negatives){
-  if(source.remaining<.005)continue;
-  const d=positives.find(x=>x.remaining>.005&&Math.abs(x.remaining-source.remaining)<.005);
-  if(d)transfer(source,d,source.remaining);
- }
- for(const source of negatives){
-  while(source.remaining>.005){
-   const choices=positives.filter(x=>x.remaining>.005);
-   if(!choices.length)break;
-   choices.sort((a,b)=>Math.abs(a.remaining-source.remaining)-Math.abs(b.remaining-source.remaining));
-   const dest=choices[0];transfer(source,dest,Math.min(source.remaining,dest.remaining));
+  // إلغاء حوّالة كاملة من حساب استقبال البنك إلى المستفيد.
+  const exact=positives.find(p=>!p.used&&Math.abs(p.amount-source.amount)<.005);
+  if(exact){
+   exact.used=true;
+   transfers.push({from:source.id,to:exact.id,amount:source.amount});
+  } else {
+   // لا تقسيم: التحويل المعتاد هو الأبسط عندما لا يوجد تطابق كامل.
+   transfers.push({from:source.id,to:target.id,amount:source.amount});
   }
-  if(source.remaining>.005)transfers.push({from:source.id,to:target.id,amount:source.remaining});
  }
  return {target,transfers};
 }
@@ -397,7 +392,7 @@ for(const mm of state.months.filter(x=>x.id>=selected))for(const l of mm.lines)i
 for(const l of state.templates)if(l.stage===gid)l.stage=replacement.id;
 g.deletedFrom=selected;
 addFor=null;editGroup=null;inline=null;closeModal();save();render();toast('حُذفت المجموعة وبنودها محفوظة')}
-function backupPayload(){return JSON.stringify({app:'Tahweelati',schemaVersion:10,savedAt:now(),data:state},null,2)}
+function backupPayload(){return JSON.stringify({app:'Tahweelati',schemaVersion:11,savedAt:now(),data:state},null,2)}
 function downloadBackup(payload){
  const blob=new Blob([payload],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
  a.href=url;a.download='tahweelati-backup-'+current().id+'.json';a.rel='noopener';document.body.append(a);a.click();a.remove();
