@@ -67,7 +67,7 @@
 .transfer-hint{display:flex;align-items:center;gap:5px;flex-wrap:wrap;color:#d5e5dd;font-size:11px;margin:1px 0 5px;line-height:1.6}
 .transfer-hint .transfer-icon{font-size:13px;color:var(--gold);font-weight:900}
 .transfer-hint strong{color:#f5e3b5;font-weight:800}
-.transfer-hint .number{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}
+.transfer-hint .number{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}.transfer-hint.incoming{color:#a8e0c2}.transfer-hint.incoming strong{color:#b4f2cd}.carried-tag{font-size:10px;display:block;color:#eacb87}.transfer-hints{display:grid;gap:2px}
 @media print{.transfer-hint{color:#303b33}.transfer-hint strong{color:#303b33}}
 
 </style></head><body><div class="app"><div class="sticky" id="sticky"><div class="top"><div><div class="kicker">يوم الراتب • من الأهلي</div><h1 class="title">تحويلاتي</h1></div><button class="morebtn" id="moreBtn" aria-label="خيارات إضافية" aria-expanded="false">⋯</button></div><div class="menu hidden" id="menu"><button data-act="backup">حفظ نسخة JSON</button><button data-act="backupText">نسخ احتياطي نصي</button><button data-act="import">استعادة نسخة</button><button data-act="print">طباعة الشهر</button><button class="warn" data-act="deleteMonth">حذف الشهر المحدد</button></div><div class="months"><div id="monthStrip" class="monthstrip" aria-label="الشهور"></div><button class="newmonth" id="newMonth">+ شهر</button></div><div id="summary" class="summary"></div><div id="salaryInline"></div></div><main id="main" class="content"></main></div><div id="toast" class="toast" role="status"></div><div id="modal"></div><input id="importInput" type="file" accept=".json,application/json" class="hidden"><script>
@@ -184,27 +184,81 @@ function ledgerFor(id){const m=current();const active=[];const applied=m.adjustm
 function adjSigned(a,id){return a.actual===id?Number(a.amount):-Number(a.amount)}
 function counterpart(a,id){return settleName(a.intended===id?a.actual:a.intended)}
 function settlementDetailsHTML(id){const {active,applied}=ledgerFor(id);
-const rows=(items,type)=>items.map(a=>{let sign=adjSigned(a,id);return `<div class="settle-line"><span class="settle-sign ${sign>=0?'positive':'negative'}">${signed(sign)}</span><span class="settle-other">${escape(counterpart(a,id))}</span>${isLatest()?`<button data-act="editSettlement" data-id="${escape(id)}" data-aid="${escape(a.id)}" aria-label="تعديل التسوية">✎</button>`:''}<button type="button" class="del" data-act="deleteSettlement" data-id="${escape(id)}" data-aid="${escape(a.id)}" aria-label="حذف التسوية مع ${escape(counterpart(a,id))}">×</button></div>`}).join('');
+const rows=(items,type)=>items.map(a=>{let sign=adjSigned(a,id);return `<div class="settle-line"><span class="settle-sign ${sign>=0?'positive':'negative'}">${signed(sign)}</span><span class="settle-other">${escape(counterpart(a,id))}${a.kind==='rollover'?`<small class="carried-tag">مُرحّل من ${escape(monthName(a.carriedFrom))}</small>`:''}</span>${isLatest()?`<button data-act="editSettlement" data-id="${escape(id)}" data-aid="${escape(a.id)}" aria-label="تعديل التسوية">✎</button>`:''}<button type="button" class="del" data-act="deleteSettlement" data-id="${escape(id)}" data-aid="${escape(a.id)}" aria-label="حذف التسوية مع ${escape(counterpart(a,id))}">×</button></div>`}).join('');
 return `<div class="settle-details">${applied.length?`<div class="settle-title" style="margin-top:9px">تسويات ${escape(monthName(current().id))} (${applied.length})</div>${rows(applied,'applied')}`:'<div class="settle-empty">لا توجد تسويات لهذا الشهر</div>'}</div>`}
 function renderSettlementEditor(l){if(!settleDraft||settleDraft.lineId!==l.id)return '';
 let v=settleDraft;let other=v.other&&v.other!==l.id?v.other:CURRENT;
 const options=`<option value="${CURRENT}" ${other===CURRENT?'selected':''}>الجاري / المتبقي من الراتب</option>`+current().lines.filter(x=>x.id!==l.id).map(x=>`<option value="${escape(x.id)}" ${other===x.id?'selected':''}>${escape(x.name)} — ${escape(groupName(x.stage))}</option>`).join('');
-return `<div class="settle-editor" data-editor="${escape(l.id)}"><div class="edithead">${v.editId?'تعديل تسوية':'تسوية جديدة'} ${v.sign<0?'− من':' + إلى'} ${escape(l.name)}</div><div class="inputs"><div class="amountfield"><label>المبلغ (ر.س)</label><input id="settleAmount" type="number" min="1" step="1" inputmode="decimal" value="${v.amount}" aria-label="مبلغ التسوية"></div></div><div class="stepper"><button data-act="settleStep" data-step="-100">−100</button><button data-act="settleStep" data-step="100">+100</button><span class="tiny">كل ضغطة 100 ريال</span></div><label style="margin-top:8px">الطرف المقابل</label><select id="settleCounter" aria-label="الحساب المقابل">${options}</select><div class="settle-helper">${v.sign<0?'يُخصم من هذا البند ويُضاف للطرف المقابل.':'يُضاف لهذا البند ويُخصم من الطرف المقابل.'} التسوية تُضاف لهذا الشهر مباشرة، ولا تتكرر في الشهر القادم.</div><div class="footerbuttons"><button data-act="cancelSettlement">إلغاء</button><button class="primary" data-act="saveSettlement" data-id="${escape(l.id)}">${v.editId?'حفظ التعديل':'حفظ التسوية'}</button></div></div>`}
-// البند السالب لا يحتاج أن يكون الطرف المقابل لتسويته هو المستفيد من التحويل الفعلي.
-// عندما يكون ضمن بنك له حساب استقبال رئيسي، يُعاد المبلغ السالب إلى حساب الاستقبال.
-// هذه إرشادات فقط، ولا تغيّر التسويات الأصلية أو الإجماليات أو علامات الصح.
-function negativeTransferHint(m,l){
- const amount=net(m,l);
- if(amount>=-0.005)return '';
- const bank=route(l.stage);
- if(!BANKS.includes(bank))return '';
+return `<div class="settle-editor" data-editor="${escape(l.id)}"><div class="edithead">${v.editId?'تعديل تسوية':'تسوية جديدة'} ${v.sign<0?'− من':' + إلى'} ${escape(l.name)}</div><div class="inputs"><div class="amountfield"><label>المبلغ (ر.س)</label><input id="settleAmount" type="number" min="1" step="1" inputmode="decimal" value="${v.amount}" aria-label="مبلغ التسوية"></div></div><div class="stepper"><button data-act="settleStep" data-step="-100">−100</button><button data-act="settleStep" data-step="100">+100</button><span class="tiny">كل ضغطة 100 ريال</span></div><label style="margin-top:8px">الطرف المقابل</label><select id="settleCounter" aria-label="الحساب المقابل">${options}</select><div class="settle-helper">${v.sign<0?'يُخصم من هذا البند ويُضاف للطرف المقابل.':'يُضاف لهذا البند ويُخصم من الطرف المقابل.'} التسوية تُضاف لهذا الشهر مباشرة، ولا يرحّل منها إلا صافي المبلغ السالب غير المنفذ عند إنشاء الشهر التالي.</div><div class="footerbuttons"><button data-act="cancelSettlement">إلغاء</button><button class="primary" data-act="saveSettlement" data-id="${escape(l.id)}">${v.editId?'حفظ التعديل':'حفظ التسوية'}</button></div></div>`}
+// مقاصة اقتراحية بين حسابات البنك نفسه: تُحوَّل المبالغ السالبة مباشرة
+// إلى الحسابات المستفيدة متى أمكن، والباقي إلى حساب استقبال البنك.
+// لا نغيّر التسويات الأصلية ولا التيكات؛ هذه فقط تعليمات التنفيذ.
+function bankNetPlan(m,bank){
  const targetId=state.bankTargets?.[bank];
  const target=m.lines.find(x=>x.id===targetId&&route(x.stage)===bank);
- if(!target||target.id===l.id)return '';
- return `<div class="transfer-hint" aria-label="التحويل المطلوب من ${escape(l.name)} إلى ${escape(target.name)}"><span class="transfer-icon" aria-hidden="true">↗</span><span>حوّل <strong class="number">${fmt(-amount)}</strong> ريال إلى <strong>${escape(target.name)}</strong></span></div>`;
+ if(!target)return {target:null,transfers:[]};
+ const negatives=m.lines.filter(l=>route(l.stage)===bank&&l.id!==target.id&&net(m,l)<-0.005)
+    .map(l=>({id:l.id,remaining:round(-net(m,l)),name:l.name}));
+ const positives=m.lines.filter(l=>route(l.stage)===bank&&l.id!==target.id&&net(m,l)>0.005)
+    .map(l=>({id:l.id,remaining:round(net(m,l)),name:l.name}));
+ const transfers=[];
+ const transfer=(s,d,a)=>{if(a>.005){transfers.push({from:s.id,to:d.id,amount:round(a)});s.remaining=round(s.remaining-a);d.remaining=round(d.remaining-a)}};
+ // أولاً: التطابقات التامة تختصر عادةً عدد الحوالات.
+ for(const source of negatives){
+  if(source.remaining<.005)continue;
+  const d=positives.find(x=>x.remaining>.005&&Math.abs(x.remaining-source.remaining)<.005);
+  if(d)transfer(source,d,source.remaining);
+ }
+ for(const source of negatives){
+  while(source.remaining>.005){
+   const choices=positives.filter(x=>x.remaining>.005);
+   if(!choices.length)break;
+   choices.sort((a,b)=>Math.abs(a.remaining-source.remaining)-Math.abs(b.remaining-source.remaining));
+   const dest=choices[0];transfer(source,dest,Math.min(source.remaining,dest.remaining));
+  }
+  if(source.remaining>.005)transfers.push({from:source.id,to:target.id,amount:source.remaining});
+ }
+ return {target,transfers};
+}
+function transferHints(m,l){
+ const bank=route(l.stage);if(!BANKS.includes(bank))return '';
+ const {transfers}=bankNetPlan(m,bank);
+ const outgoing=transfers.filter(t=>t.from===l.id);
+ const incoming=transfers.filter(t=>t.to===l.id);
+ if(!outgoing.length&&!incoming.length)return '';
+ return `<div class="transfer-hints">${outgoing.map(t=>{
+  const dest=m.lines.find(x=>x.id===t.to);if(!dest)return '';
+  return `<div class="transfer-hint"><span class="transfer-icon" aria-hidden="true">↗</span><span>حوّل <strong class="number">${fmt(t.amount)}</strong> ريال إلى <strong>${escape(dest.name)}</strong></span></div>`;
+ }).join('')}${incoming.map(t=>{
+  const src=m.lines.find(x=>x.id===t.from);if(!src)return '';
+  return `<div class="transfer-hint incoming"><span class="transfer-icon" aria-hidden="true">↙</span><span>استقبل <strong class="number">${fmt(t.amount)}</strong> ريال من <strong>${escape(src.name)}</strong></span></div>`;
+ }).join('')}</div>`;
+}
+// أي مبلغ سالب لم يوضع له تيك يُرحَّل للشهر الجديد كرصيد مستحق،
+// لا كنسخة من كامل التسوية القديمة؛ حتى لا يحتسب التعويض مرتين.
+function carryUnpaidInto(m,next){
+ const records=[];
+ for(const bank of BANKS){
+  const plan=bankNetPlan(m,bank);
+  for(const source of m.lines.filter(l=>route(l.stage)===bank&&l.id!==plan.target?.id&&!l.done&&net(m,l)<-0.005)){
+   const proposed=plan.transfers.filter(t=>t.from===source.id);
+   for(const t of proposed){
+    const dest=m.lines.find(l=>l.id===t.to);
+    // إذا كان المستفيد قد استلم بالفعل من حساب الاستقبال، يصبح الحساب الرئيسي هو الدائن.
+    const destId=dest?.done?plan.target.id:t.to;
+    if(destId===source.id)continue;
+    records.push({id:uid(),intended:source.id,actual:destId,amount:t.amount,
+      originMonth:m.id,appliedMonth:next.id,createdAt:now(),kind:'rollover',
+      carriedFrom:m.id,sourceLineId:source.id,note:'مبلغ غير منفذ مُرحّل من '+monthName(m.id)});
+   }
+  }
+ }
+ // نتفادى إنشاء تسويات على حسابات لم تعد موجودة في الشهر الجديد.
+ for(const a of records)if(next.lines.some(l=>l.id===a.intended)&&next.lines.some(l=>l.id===a.actual))next.adjustments.push(a);
+ return next.adjustments.length;
 }
 function rowHTML(m,l){let d=delta(m,l.id),val=net(m,l),label=inline?.id===l.id?inline.field:null,scope=inline?.id===l.id&&inline.stage==='scope',ledger=ledgerFor(l.id),count=ledger.applied.length;
-return `<div class="item-shell" data-line-id="${escape(l.id)}"><div class="item">${checked(l)}<span class="handle" data-drag="${escape(l.id)}" aria-label="اسحب لترتيب أو نقل البند" title="اسحب لترتيب أو نقل البند">⠿</span>${label==='name'&&inline.stage==='editing'?`<input class="inlineInput nameInput" data-editinput="name" data-id="${escape(l.id)}" maxlength="110" value="${escape(l.name)}">`:`<span class="itemname ${l.done?'isdone':''}" data-act="inline" data-field="name" data-id="${escape(l.id)}" title="تعديل الاسم مباشرة">${escape(l.name)}</span>`}${label==='base'&&inline.stage==='editing'?`<input class="inlineInput amountInput" data-editinput="base" data-id="${escape(l.id)}" type="number" step="0.01" min="0" inputmode="decimal" value="${l.base}">`:`<span class="itemamt" data-act="inline" data-field="base" data-id="${escape(l.id)}" title="تعديل المبلغ مباشرة">${fmt(val)}</span>`}<button class="quick minus" data-act="adjust" data-id="${escape(l.id)}" data-sign="minus" aria-label="تسوية ناقص جديدة">−</button><button class="quick plus" data-act="adjust" data-id="${escape(l.id)}" data-sign="plus" aria-label="تسوية زائد جديدة">+</button><button class="tinyhist" data-act="history" data-id="${escape(l.id)}" aria-label="سجل البند">↶</button></div><div class="rowbelow">${negativeTransferHint(m,l)}${count?`<div class="deltas">${ledger.applied.length?`<button class="delta ${d>0?'positive':d<0?'negative':''}" data-act="settleDetails" data-id="${escape(l.id)}" aria-expanded="${settleDetails===l.id}">${signed(d)} (${ledger.applied.length}) ▾</button>`:''}</div>`:''}${l.done&&l.amountAtDone!=null&&Math.abs(l.amountAtDone-val)>.005?'<div class="delta negative">تغيّر المبلغ بعد ✓</div>':''}${scope?`<div class="editScope"><b>تحفظ التعديل متى؟</b><div class="scopebar"><button data-act="commitEdit" data-scope="month">هذا الشهر فقط</button><button class="main" data-act="commitEdit" data-scope="future">هذا الشهر وما بعده</button><button class="cancel" data-act="cancelEdit">إلغاء</button>${l&&`<button data-act="deleteLine" data-id="${escape(l.id)}">حذف البند</button>`}</div></div>`:''}${settleDraft?.lineId===l.id?renderSettlementEditor(l):''}${settleDetails===l.id?settlementDetailsHTML(l.id):''}${histItem===l.id?historyHTML(l.id):''}</div></div>`}
+return `<div class="item-shell" data-line-id="${escape(l.id)}"><div class="item">${checked(l)}<span class="handle" data-drag="${escape(l.id)}" aria-label="اسحب لترتيب أو نقل البند" title="اسحب لترتيب أو نقل البند">⠿</span>${label==='name'&&inline.stage==='editing'?`<input class="inlineInput nameInput" data-editinput="name" data-id="${escape(l.id)}" maxlength="110" value="${escape(l.name)}">`:`<span class="itemname ${l.done?'isdone':''}" data-act="inline" data-field="name" data-id="${escape(l.id)}" title="تعديل الاسم مباشرة">${escape(l.name)}</span>`}${label==='base'&&inline.stage==='editing'?`<input class="inlineInput amountInput" data-editinput="base" data-id="${escape(l.id)}" type="number" step="0.01" min="0" inputmode="decimal" value="${l.base}">`:`<span class="itemamt" data-act="inline" data-field="base" data-id="${escape(l.id)}" title="تعديل المبلغ مباشرة">${fmt(val)}</span>`}<button class="quick minus" data-act="adjust" data-id="${escape(l.id)}" data-sign="minus" aria-label="تسوية ناقص جديدة">−</button><button class="quick plus" data-act="adjust" data-id="${escape(l.id)}" data-sign="plus" aria-label="تسوية زائد جديدة">+</button><button class="tinyhist" data-act="history" data-id="${escape(l.id)}" aria-label="سجل البند">↶</button></div><div class="rowbelow">${transferHints(m,l)}${count?`<div class="deltas">${ledger.applied.length?`<button class="delta ${d>0?'positive':d<0?'negative':''}" data-act="settleDetails" data-id="${escape(l.id)}" aria-expanded="${settleDetails===l.id}">${signed(d)} (${ledger.applied.length}) ▾</button>`:''}</div>`:''}${l.done&&l.amountAtDone!=null&&Math.abs(l.amountAtDone-val)>.005?'<div class="delta negative">تغيّر المبلغ بعد ✓</div>':''}${scope?`<div class="editScope"><b>تحفظ التعديل متى؟</b><div class="scopebar"><button data-act="commitEdit" data-scope="month">هذا الشهر فقط</button><button class="main" data-act="commitEdit" data-scope="future">هذا الشهر وما بعده</button><button class="cancel" data-act="cancelEdit">إلغاء</button>${l&&`<button data-act="deleteLine" data-id="${escape(l.id)}">حذف البند</button>`}</div></div>`:''}${settleDraft?.lineId===l.id?renderSettlementEditor(l):''}${settleDetails===l.id?settlementDetailsHTML(l.id):''}${histItem===l.id?historyHTML(l.id):''}</div></div>`}
 function addLineHTML(g){return `<div class="inlineadd"><div class="tiny">بند جديد في ${escape(g.name)}</div><div class="fields"><input class="newname" maxlength="110" placeholder="اسم البند" aria-label="اسم البند"><input class="newamt" type="number" inputmode="decimal" min="0" step="0.01" placeholder="المبلغ" aria-label="المبلغ"></div><div class="scopebar"><button data-act="saveNewLine" data-id="${escape(g.id)}" data-scope="month">هذا الشهر</button><button class="main" data-act="saveNewLine" data-id="${escape(g.id)}" data-scope="future">هذا الشهر وما بعده</button><button class="cancel" data-act="cancelAdd">إلغاء</button></div></div>`}
 function addGroupHTML(sectionId){
  const s=sectionBy(sectionId);if(!s)return '';
@@ -258,7 +312,7 @@ function editStart(id,field){const l=lineBy(id);if(!l)return;inline={id,field,st
 function editFinish(inp){if(!inline||inline.stage!=='editing'||!inp||inline.id!==inp.dataset.id)return;let val=inline.field==='base'?Number(inp.value):inp.value.trim();if(inline.field==='base'&&(!Number.isFinite(val)||val<0)){toast('أدخل مبلغًا صحيحًا');inline=null;render();return}if(inline.field==='name'&&!val){toast('أدخل اسم البند');inline=null;render();return}if(String(val)===String(inline.original)){inline=null;render();return}inline.stage='scope';inline.value=inline.field==='base'?round(val):val;render()}
 function action(btn){const act=btn.dataset.act,id=btn.dataset.id,m=current();
 if(act==='month'){state.currentMonth=id;inline=null;quickPicker=null;settleDraft=null;settleDetails=null;histItem=null;salaryEdit=false;addFor=null;editGroup=null;save();render();window.scrollTo({top:0,behavior:'smooth'});return}
-if(act==='tick'){let l=lineBy(id);if(l){l.done=!l.done;l.doneAt=l.done?now():null;l.amountAtDone=l.done?net(m,l):null;save();render()}return}
+if(act==='tick'){let l=lineBy(id);if(l){if(!isLatest()&&net(m,l)<-0.005&&state.months.some(x=>x.id>m.id&&x.adjustments.some(a=>a.carriedFrom===m.id&&a.sourceLineId===l.id))){toast('هذا المبلغ مُرحّل بالفعل؛ عدّله في الشهر الأحدث');return}l.done=!l.done;l.doneAt=l.done?now():null;l.amountAtDone=l.done?net(m,l):null;save();render()}return}
 if(act==='toggleBank'){if(!BANKS.includes(id))return;state.bankExpanded[id]=!state.bankExpanded[id];save();renderMain();return}
 if(act==='tickBank'){
  if(!BANKS.includes(id))return;
@@ -343,7 +397,7 @@ for(const mm of state.months.filter(x=>x.id>=selected))for(const l of mm.lines)i
 for(const l of state.templates)if(l.stage===gid)l.stage=replacement.id;
 g.deletedFrom=selected;
 addFor=null;editGroup=null;inline=null;closeModal();save();render();toast('حُذفت المجموعة وبنودها محفوظة')}
-function backupPayload(){return JSON.stringify({app:'Tahweelati',schemaVersion:8,savedAt:now(),data:state},null,2)}
+function backupPayload(){return JSON.stringify({app:'Tahweelati',schemaVersion:10,savedAt:now(),data:state},null,2)}
 function downloadBackup(payload){
  const blob=new Blob([payload],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
  a.href=url;a.download='tahweelati-backup-'+current().id+'.json';a.rel='noopener';document.body.append(a);a.click();a.remove();
@@ -369,8 +423,8 @@ async function copyBackup(){
 
 function showModal(inner){$('#modal').innerHTML=`<div class="shade"><div class="sheet" role="dialog" aria-modal="true">${inner}</div></div>`;document.body.style.overflow='hidden'}
 function closeModal(){$('#modal').innerHTML='';document.body.style.overflow=''}
-function addMonth(){showModal(`<h2>شهر جديد</h2><div class="tiny">يبدأ بدون علامات صح أو تسويات. تسويات الأشهر السابقة تبقى محفوظة في شهرها فقط.</div><input id="monthInput" type="month" value="${nextMonth(latest())}"><div class="btns"><button data-modal="close">إلغاء</button><button class="main" data-modal="saveMonth">إضافة الشهر</button></div>`)}
-function saveMonth(){let month=$('#monthInput')?.value;if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)){toast('اختر شهرًا صحيحًا');return}if(state.months.some(x=>x.id===month)){state.currentMonth=month;closeModal();render();return}if(month<=latest()){toast('اختر شهرًا بعد آخر شهر محفوظ');return}let next=makeMonth(month,state.templates,state.salaryDefault);state.months.push(next);state.currentMonth=month;quickPicker=null;inline=null;histItem=null;settleDraft=null;settleDetails=null;closeModal();save();render();window.scrollTo(0,0);toast('بدأ شهر جديد')}
+function addMonth(){showModal(`<h2>شهر جديد</h2><div class="tiny">يبدأ بعلامات صح فارغة. أي مبلغ سالب لم يُنفذ ينتقل بصافي المبلغ المتبقي فقط، وتبقى تسوياته الأصلية محفوظة في الشهر السابق.</div><input id="monthInput" type="month" value="${nextMonth(latest())}"><div class="btns"><button data-modal="close">إلغاء</button><button class="main" data-modal="saveMonth">إضافة الشهر</button></div>`)}
+function saveMonth(){let month=$('#monthInput')?.value;if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)){toast('اختر شهرًا صحيحًا');return}if(state.months.some(x=>x.id===month)){state.currentMonth=month;closeModal();render();return}if(month<=latest()){toast('اختر شهرًا بعد آخر شهر محفوظ');return}let next=makeMonth(month,state.templates,state.salaryDefault);const rolled=carryUnpaidInto(state.months.find(x=>x.id===latest()),next);state.months.push(next);state.currentMonth=month;quickPicker=null;inline=null;histItem=null;settleDraft=null;settleDetails=null;closeModal();save();render();window.scrollTo(0,0);toast(rolled?'بدأ شهر جديد، وترحلت '+rolled+' تسوية غير منفذة':'بدأ شهر جديد')}
 function showDeleteMonth(month){const m=state.months.find(x=>x.id===month);if(!m)return;
 const only=state.months.length===1;
 const incoming=m.adjustments?.length||0;
